@@ -16,9 +16,10 @@ def download_video(url, output_path="downloads"):
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            title = info.get('title', 'Unknown Title')
-            filename = os.path.join(output_path, f"{title}.mp4")
-            return title, filename
+            filename = ydl.prepare_filename(info)
+            if not filename.endswith(".mp4"):
+                filename = os.path.splitext(filename)[0] + ".mp4"
+            return info.get('title', 'Unknown Title'), filename
     except Exception as e:
         return None, str(e)
 
@@ -32,10 +33,16 @@ def main():
         if youtube_url:
             with st.spinner('Downloading...'):
                 title, result = download_video(youtube_url)
-                if title:
-                    st.success(f"✅ Downloaded: {title}")
-                    st.video(result)
-                    st.info(f"Saved to 'downloads' folder.")
+                if title and os.path.exists(result):
+                    with open(result, "rb") as f:
+                        video_bytes = f.read()
+                        st.success(f"✅ Downloaded: {title}")
+                        st.download_button(
+                            label="📥 Click to Download MP4",
+                            data=video_bytes,
+                            file_name=os.path.basename(result),
+                            mime="video/mp4"
+                        )
                 else:
                     st.error(f"❌ Error: {result}")
         else:
