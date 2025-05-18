@@ -1,19 +1,31 @@
-# :earth_americas: GDP dashboard template
+# 🎬 YouTube Video Downloader (Streamlit App)
 
-A simple Streamlit app showing the GDP of different countries in the world.
+This is a simple Streamlit-based web app that allows users to download YouTube videos by pasting a URL. Once the video is processed, a download button is provided for the user to download the `.mp4` file directly to their device.
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://gdp-dashboard-template.streamlit.app/)
+---
 
-### How to run it on your own machine
+## 🚀 Features
 
-1. Install the requirements
+- ✅ Download any single YouTube video
+- ✅ Automatically merges video and audio streams
+- ✅ Provides a download button for the user
+- 🚫 Does not support playlists
+- ⚠️ Intended for small to medium-sized videos (<100MB)
 
-   ```
-   $ pip install -r requirements.txt
-   ```
+---
 
-2. Run the app
+## 🛠 Requirements
 
-   ```
-   $ streamlit run streamlit_app.py
-   ```
+- Python 3.7+
+- `streamlit`
+- `yt-dlp`
+- `ffmpeg` (optional, but recommended for format merging)
+
+---
+
+## 📦 Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/yourusername/youtube-downloader-app.git
+   cd youtube-downloader-app
