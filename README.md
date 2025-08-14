@@ -29,3 +29,12 @@ This is a simple Streamlit-based web app that allows users to download YouTube v
    ```bash
    git clone https://github.com/yourusername/youtube-downloader-app.git
    cd youtube-downloader-app
+   ```
+2. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. **Run the application**
+   ```bash
+   streamlit run streamlit_app.py
+   ```
