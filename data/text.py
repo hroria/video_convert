@@ -9,11 +9,17 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
     Render a polished HTML catalog for interactive schema exploration, with:
 
     - Global search across server / db / schema / table / column / data type text
-    - Dynamic summary cards (Servers, Databases, Schemas, Tables, Columns) that update with search/filters
+    - Dynamic summary cards (Servers, Databases, Schemas, Tables, Columns)
     - Export CSV button: exports ALL columns for all currently visible (filtered) tables
     - Horizontal database row tabs instead of a vertical list
-    - Quick filters: Server / Database / Schema (cascading)
-    - Filter labels show counts of available values
+    - Quick filters: Server / Database / Schema (cascading, with counts)
+    - Reset Filters ghost button (only affects filters, not search)
+    - Clickable column names:
+        * Clicking a column (e.g. customer_id) filters to all tables that contain that column
+        * Column filter COMBINES with global search + other filters
+        * Shows a removable "Column: customer_id" chip under the search bar
+        * Each column cell has a tooltip: "Click to show all tables that contain this column"
+    - "X of Y objects shown" line (tables + columns) under the search bar
     - Light/Dark theme toggle + server chips on table cards
     """
 
@@ -137,7 +143,7 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
         hero_subtitle = f"{pluralize(total_tables, 'table')} • {pluralize(total_columns, 'column')}"
 
     # For DataTables default ordering
-    ordinal_index = None    # index into visible columns
+    ordinal_index = None  # index into visible columns
     if has_ordinal:
         ordinal_index = 2
         if has_max_length:
@@ -203,10 +209,18 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
 
                 body_rows = []
                 for row in rows:
-                    column_name = escape(fmt_value(row.get("column_name")))
+                    raw_column = fmt_value(row.get("column_name"))
+                    column_name = escape(raw_column)
                     dtype = escape(fmt_value(row.get("data_type")))
                     row_cells = [
-                        f"<td><code>{column_name}</code></td>",
+                        (
+                            "<td class='column-name-cell' "
+                            "data-column-name=\"{col}\" "
+                            "data-bs-toggle=\"tooltip\" "
+                            "data-bs-placement=\"top\" "
+                            "title=\"Click to show all tables that contain this column\">"
+                            "<code>{col}</code></td>"
+                        ).format(col=column_name),
                         f"<td><span class='dtype-pill'>{dtype}</span></td>",
                     ]
                     if has_max_length:
@@ -309,7 +323,7 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
             """
         )
 
-    # Quick filter bar HTML (server filter conditional) with count pills
+    # Quick filter bar HTML (server filter conditional) with count pills + Reset button
     server_filter_html = ""
     if has_server:
         server_filter_html = """
@@ -341,6 +355,11 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
           <select id="schemaFilter" class="form-select form-select-sm">
             <option value="all">All schemas</option>
           </select>
+        </div>
+        <div class="ms-auto">
+          <button id="resetFiltersBtn" type="button" class="reset-filters-btn">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>Reset filters
+          </button>
         </div>
       </div>
     """
@@ -587,12 +606,67 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
       white-space: nowrap;
     }}
 
+    .results-overview {{
+      margin-top: 0.4rem;
+    }}
+
+    .results-overview-text {{
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }}
+
+    .filter-chips {{
+      margin-top: 0.35rem;
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }}
+
+    .filter-chip {{
+      border: none;
+      background: rgba(79, 70, 229, 0.08);
+      color: var(--brand-dark);
+      font-size: 0.78rem;
+      border-radius: 999px;
+      padding: 0.22rem 0.7rem;
+      display: none;
+      align-items: center;
+      gap: 0.4rem;
+      cursor: pointer;
+    }}
+
+    .filter-chip.visible {{
+      display: inline-flex;
+    }}
+
+    body.dark-theme .filter-chip {{
+      background: rgba(79, 70, 229, 0.3);
+      color: #e5e7eb;
+    }}
+
+    .chip-label {{
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+    }}
+
+    .chip-close {{
+      font-size: 0.9rem;
+      line-height: 1;
+      opacity: 0.8;
+    }}
+
+    .chip-close:hover {{
+      opacity: 1;
+    }}
+
     .filter-bar {{
       display: flex;
       flex-wrap: wrap;
       gap: 0.75rem;
       align-items: flex-end;
       margin-bottom: 0.6rem;
+      margin-top: 0.75rem;
     }}
 
     .filter-group {{
@@ -625,6 +699,29 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
       font-size: 0.65rem;
       background: rgba(148, 163, 184, 0.15);
       color: var(--text-muted);
+    }}
+
+    .reset-filters-btn {{
+      border: none;
+      background: transparent;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      display: none;
+      align-items: center;
+      gap: 0.25rem;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }}
+
+    .reset-filters-btn.visible {{
+      display: inline-flex;
+    }}
+
+    .reset-filters-btn:hover {{
+      background: rgba(148, 163, 184, 0.12);
+      color: var(--text);
     }}
 
     .db-layout {{
@@ -839,12 +936,21 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
       color: var(--text);
     }}
 
+    .column-name-cell {{
+      cursor: pointer;
+    }}
+
+    .column-name-cell:hover code {{
+      background: rgba(79, 70, 229, 0.12);
+    }}
+
     .column-table code {{
       background: rgba(99, 102, 241, 0.08);
       padding: 0.15rem 0.4rem;
       border-radius: 0.35rem;
       font-size: 0.85rem;
       color: var(--text);
+      transition: background 0.1s ease;
     }}
 
     body.dark-theme .column-table code {{
@@ -934,6 +1040,19 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
       <i class="bi bi-download me-1"></i>
       Export CSV
     </button>
+  </section>
+
+  <section class="filter-chips">
+    <button id="activeColumnChip" type="button" class="filter-chip" aria-label="Remove column filter">
+      <span class="chip-label"></span>
+      <span class="chip-close" aria-hidden="true">&times;</span>
+    </button>
+  </section>
+
+  <section class="results-overview">
+    <p id="resultsOverview" class="results-overview-text mb-0">
+      <!-- JS will populate -->
+    </p>
   </section>
 
   <section class="catalog-wrapper">
@@ -1027,6 +1146,12 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
       }});
     }}
 
+    // ---------- Bootstrap tooltips for column cells ----------
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.forEach(function (tooltipTriggerEl) {{
+      new bootstrap.Tooltip(tooltipTriggerEl);
+    }});
+
     // ---------- DataTables lazy init ----------
     $(document).on('shown.bs.collapse', '.columns-collapse', function () {{
       const $table = $(this).find('table.column-table').first();
@@ -1053,12 +1178,12 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
       initializedTables[tableId] = true;
     }});
 
-    // ---------- GLOBAL SEARCH + FILTERS + DYNAMIC SUMMARY + EXPORT ----------
-
+    // ---------- GLOBAL SEARCH + FILTERS + COLUMN FILTER + SUMMARY + EXPORT ----------
     const globalInput = document.getElementById('globalSearchInput');
     const exportBtn = document.getElementById('exportCsvBtn');
     const clearBtn = document.getElementById('clearSearchBtn');
     const searchStatusBadge = document.getElementById('searchStatusBadge');
+    const resultsOverviewEl = document.getElementById('resultsOverview');
 
     const summaryServersEl = document.getElementById('summary-servers');
     const summaryDbsEl = document.getElementById('summary-databases');
@@ -1073,6 +1198,14 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
     const serverCountEl = document.getElementById('serverFilterCount');
     const dbCountEl = document.getElementById('dbFilterCount');
     const schemaCountEl = document.getElementById('schemaFilterCount');
+
+    const resetFiltersBtn = document.getElementById('resetFiltersBtn');
+
+    const activeColumnChip = document.getElementById('activeColumnChip');
+    const activeColumnChipLabel = activeColumnChip ? activeColumnChip.querySelector('.chip-label') : null;
+
+    let columnFilter = null;         // lowercase column name
+    let columnFilterLabel = '';      // original label
 
     const baseSummary = {{
       servers: summaryServersEl ? Number(summaryServersEl.dataset.baseValue || '0') : 0,
@@ -1093,6 +1226,23 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
     function setSearchStatus(text) {{
       if (!searchStatusBadge) return;
       searchStatusBadge.textContent = text;
+    }}
+
+    function updateResultsOverview(visibleTables, visibleColumns) {{
+      if (!resultsOverviewEl) return;
+      const totalTables = baseSummary.tables;
+      const totalColumns = baseSummary.columns;
+
+      if (visibleTables === totalTables && visibleColumns === totalColumns) {{
+        resultsOverviewEl.textContent =
+          'Showing all ' + visibleTables.toLocaleString() + ' tables (' +
+          visibleColumns.toLocaleString() + ' columns)';
+      }} else {{
+        resultsOverviewEl.textContent =
+          'Showing ' + visibleTables.toLocaleString() + ' of ' + totalTables.toLocaleString() +
+          ' tables (' + visibleColumns.toLocaleString() + ' of ' + totalColumns.toLocaleString() +
+          ' columns)';
+      }}
     }}
 
     const searchEntries = [];
@@ -1121,6 +1271,16 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
 
       const columnsCollapse = tableCard.querySelector('.columns-collapse');
 
+      // Collect column names for this table (for columnFilter)
+      const columnNamesSet = new Set();
+      tableCard.querySelectorAll('tbody tr').forEach(tr => {{
+        const firstTd = tr.querySelector('td');
+        if (!firstTd) return;
+        const name = (firstTd.innerText || '').trim().toLowerCase();
+        if (name) columnNamesSet.add(name);
+      }});
+      const columnNames = Array.from(columnNamesSet);
+
       searchEntries.push({{
         tableCard,
         schemaAcc,
@@ -1131,7 +1291,8 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
         dbName,
         schemaName,
         tableName,
-        columnCount
+        columnCount,
+        columnNames
       }});
 
       if (serverLabel) {{
@@ -1182,6 +1343,25 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
         selectEl.value = selectedValue;
       }} else {{
         selectEl.value = 'all';
+      }}
+    }}
+
+    function updateResetFiltersVisibility() {{
+      const serverSel = serverFilter ? (serverFilter.value || 'all').toLowerCase() : 'all';
+      const dbSel = dbFilter ? (dbFilter.value || 'all').toLowerCase() : 'all';
+      const schemaSel = schemaFilter ? (schemaFilter.value || 'all').toLowerCase() : 'all';
+
+      const anyActive =
+        (serverFilter && serverSel !== 'all') ||
+        (dbFilter && dbSel !== 'all') ||
+        (schemaFilter && schemaSel !== 'all');
+
+      if (resetFiltersBtn) {{
+        if (anyActive) {{
+          resetFiltersBtn.classList.add('visible');
+        }} else {{
+          resetFiltersBtn.classList.remove('visible');
+        }}
       }}
     }}
 
@@ -1237,6 +1417,16 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
         }}
         setOptionsFromMap(schemaFilter, allowedSchemaMap, schemaSel);
       }}
+
+      updateResetFiltersVisibility();
+    }}
+
+    function clearColumnFilter() {{
+      columnFilter = null;
+      columnFilterLabel = '';
+      if (activeColumnChip) {{
+        activeColumnChip.classList.remove('visible');
+      }}
     }}
 
     // Initial filter population (all values)
@@ -1253,6 +1443,9 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
       document.querySelectorAll('.db-tabs .nav-link').forEach(link => {{
         link.style.display = '';
       }});
+
+      clearColumnFilter();
+
       setSummary(
         baseSummary.servers,
         baseSummary.databases,
@@ -1260,6 +1453,7 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
         baseSummary.tables,
         baseSummary.columns
       );
+      updateResultsOverview(baseSummary.tables, baseSummary.columns);
       setSearchStatus('Showing all objects');
 
       if (clearBtn) {{
@@ -1295,8 +1489,9 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
       const hasServerFilter = serverSel !== 'all';
       const hasDbFilter = dbSel !== 'all';
       const hasSchemaFilter = schemaSel !== 'all';
+      const hasColumnFilter = !!columnFilter;
 
-      if (!hasSearch && !hasServerFilter && !hasDbFilter && !hasSchemaFilter) {{
+      if (!hasSearch && !hasServerFilter && !hasDbFilter && !hasSchemaFilter && !hasColumnFilter) {{
         resetCatalogVisibility();
         return;
       }}
@@ -1314,6 +1509,9 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
       if (hasSchemaFilter && schemaFilter) {{
         const label = schemaFilter.options[schemaFilter.selectedIndex]?.textContent || '';
         tokens.push('Schema: ' + label);
+      }}
+      if (hasColumnFilter && columnFilterLabel) {{
+        tokens.push('Column: ' + columnFilterLabel);
       }}
       setSearchStatus(tokens.join(' • ') || 'Filtered view');
 
@@ -1345,13 +1543,15 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
           dbName,
           schemaName,
           tableName,
-          columnCount
+          columnCount,
+          columnNames
         }} = entry;
 
         if (hasSearch && fullText.indexOf(q) === -1) continue;
         if (hasServerFilter && serverName !== serverSel) continue;
         if (hasDbFilter && dbName !== dbSel) continue;
         if (hasSchemaFilter && schemaName !== schemaSel) continue;
+        if (hasColumnFilter && (!columnNames || columnNames.indexOf(columnFilter) === -1)) continue;
 
         tableCard.style.display = '';
         tableCard.classList.add('search-match');
@@ -1373,6 +1573,7 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
       }}
 
       setSummary(serverSet.size, dbSet.size, schemaSet.size, tableSet.size, totalCols);
+      updateResultsOverview(tableSet.size, totalCols);
 
       document.querySelectorAll('.schema-accordion').forEach(schemaAcc => {{
         const has = schemaHasMatch.has(schemaAcc.id);
@@ -1450,6 +1651,52 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
       }});
     }}
 
+    if (resetFiltersBtn) {{
+      resetFiltersBtn.addEventListener('click', function () {{
+        if (serverFilter) serverFilter.value = 'all';
+        if (dbFilter) dbFilter.value = 'all';
+        if (schemaFilter) schemaFilter.value = 'all';
+        updateFilterOptions();
+        runCombinedSearchAndFilters();
+      }});
+    }}
+
+    // Column filter chip click (clear)
+    if (activeColumnChip) {{
+      activeColumnChip.addEventListener('click', function () {{
+        clearColumnFilter();
+        runCombinedSearchAndFilters();
+      }});
+    }}
+
+    // Click on column name cell => set columnFilter
+    document.addEventListener('click', function (e) {{
+      const cell = e.target.closest('.column-name-cell');
+      if (!cell) return;
+
+      // Use attribute first, fall back to innerText
+      const rawName = (cell.getAttribute('data-column-name') || cell.innerText || '').trim();
+      if (!rawName) return;
+
+      const lower = rawName.toLowerCase();
+      columnFilter = lower;
+      columnFilterLabel = rawName;
+
+      // Show / update the chip
+      if (activeColumnChip && activeColumnChipLabel) {{
+        const safeLabel = rawName.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        activeColumnChipLabel.innerHTML =
+          '<span class="me-1"><i class="bi bi-columns-gap"></i></span>' +
+          '<span>Column: <code>' + safeLabel + '</code></span>';
+        activeColumnChip.classList.add('visible');
+      }}
+
+      runCombinedSearchAndFilters();
+    }});
+
+    // Initialize overview for full catalog on first load
+    updateResultsOverview(baseSummary.tables, baseSummary.columns);
+
     // ---------- EXPORT CSV ----------
     function csvEscape(value) {{
       const v = String(value == null ? '' : value);
@@ -1463,9 +1710,11 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
         const q = (globalInput && globalInput.value ? globalInput.value : '').trim();
 
         const rows = [];
-        const header = ['server', 'database', 'schema', 'table', 'column_name', 'data_type', 'max_length', 'ordinal_position'];
+        const header = ['server', 'database', 'schema', 'table',
+                        'column_name', 'data_type', 'max_length', 'ordinal_position'];
         rows.push(header);
 
+        // Only export currently visible tables (after search/filters/column filter)
         document.querySelectorAll('.table-item').forEach(tableCard => {{
           if (tableCard.style.display === 'none') return;
 
@@ -1522,7 +1771,7 @@ def generate_catalog_html(df: pd.DataFrame, output_path: str | Path = "db_catalo
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
 
-        const safeQuery = q || 'filtered';
+        const safeQuery = q || (columnFilterLabel ? 'column_' + columnFilterLabel : 'filtered');
         a.href = url;
         a.download = 'schema_report_' + safeQuery.replace(/[^0-9a-zA-Z-_]+/g, '_') + '.csv';
         document.body.appendChild(a);
