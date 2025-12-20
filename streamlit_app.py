@@ -1,6 +1,12 @@
 import streamlit as st
 import yt_dlp
 import os
+import re
+
+
+def _sanitize_filename(name: str) -> str:
+    """Remove characters that are invalid in file names."""
+    return re.sub(r'[\\/:*?"<>|]', '_', name)
 
 def download_video(url, output_path="downloads"):
     try:
@@ -19,7 +25,14 @@ def download_video(url, output_path="downloads"):
             filename = ydl.prepare_filename(info)
             if not filename.endswith(".mp4"):
                 filename = os.path.splitext(filename)[0] + ".mp4"
-            return info.get('title', 'Unknown Title'), filename
+
+            safe_path = os.path.join(
+                os.path.dirname(filename),
+                _sanitize_filename(os.path.basename(filename))
+            )
+            if safe_path != filename and os.path.exists(filename):
+                os.rename(filename, safe_path)
+            return info.get('title', 'Unknown Title'), safe_path
     except Exception as e:
         return None, str(e)
 
